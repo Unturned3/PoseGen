@@ -1,14 +1,26 @@
 
 import cv2
-import Equirec2Perspec as ep
+from PIL import Image
+from equilib import Equi2Pers
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.linalg import norm as vec_norm
 import utils
+from timer import Timer
 
 import os, time
 
-equ = ep.Equirectangular('t2.png')
+with Timer():
+    equi_img = cv2.imread('pano-1024.jpg')
+    print(equi_img.shape)
+    equi_img = np.transpose(equi_img, (2, 0, 1))
+
+equi2pers = Equi2Pers(
+    height=240,
+    width=320,
+    fov_x=75.0,
+    mode='bilinear',
+)
 
 n_keyframes = 10
 dt = 1 / 25
@@ -101,9 +113,9 @@ def main():
     pan_angles = [e[0] for e in poses]
     tilt_angles = [e[1] for e in poses]
 
-    plt.hist(pan_angles)
-    plt.hist(tilt_angles)
-    plt.show()
+    #plt.hist(pan_angles)
+    #plt.hist(tilt_angles)
+    #plt.show()
 
     #print('Press return to proceed...', end='')
     #input()
@@ -111,10 +123,16 @@ def main():
     imgs = []
     for p in poses:
         start_time = time.time()
-        img = equ.GetPerspective(75, p[0], p[1], 240, 320)
+        rots = {
+            'yaw': np.radians(p[0]),
+            'pitch': np.radians(p[1]),
+            'roll': 0,
+        }
+        img = equi2pers(equi=equi_img, rots=rots)
+        img = np.transpose(img, (1, 2, 0))
         t = time.time() - start_time
         cv2.imshow('img', img)
-        cv2.waitKey(max(int(1/dt- t*1000), 1))
+        cv2.waitKey(max(int((dt-t)*1000), 1))
         #cv2.waitKey(1)
         imgs.append(img)
 
