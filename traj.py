@@ -43,7 +43,7 @@ def angular_dist(a, b):
     d[d > 180] -= 360
     return d
 
-def rand_pan_tilt(prev_pose=None, target_fov=None):
+def rand_pose(prev_pose=None, target_fov=None):
     if prev_pose is None:
         pan = np.random.uniform(-180, 180)
         tilt = np.random.uniform(-40, 10)
@@ -60,7 +60,10 @@ def rand_pan_tilt(prev_pose=None, target_fov=None):
         #min_tilt, max_tilt = -50, 40
         #pan = np.random.uniform(pp-30, pp+30)
         #tilt = np.random.uniform(max(min_tilt, pt-20), min(max_tilt, pt+20))
-        pan = utils.multimodal(ss.uniform, [pp-65, pp+55], [10, 10])
+        if target_fov < 35:
+            pan = utils.multimodal(ss.uniform, [pp-30, pp+20], [10, 10])
+        else:
+            pan = utils.multimodal(ss.uniform, [pp-65, pp+55], [10, 10])
         tilt = utils.multimodal(ss.uniform, [pt-15, pt+5], [10, 10])
         tilt = np.clip(tilt, -0.5 * target_fov - 2.5, 10)
         roll = utils.multimodal(ss.norm, [pr-2, pr+2], [1, 1])
@@ -74,7 +77,7 @@ def main():
     min_fov = 15
 
     cur_fov = 75    # TODO: make this random too?
-    cur_pose = rand_pan_tilt()
+    cur_pose = rand_pose()
     angular_vel = np.array([0, 0, 0], np.float64)
     angular_accel = np.array([0, 0, 0], np.float64)
 
@@ -89,11 +92,11 @@ def main():
         # 50% chance to attempt zoom change
         if np.random.uniform(0, 1) < 0.5:
             target_fov = utils.multimodal(
-                ss.norm, [15, 35, 55, 75], [1.5] * 4)
+                ss.norm, [35, 55, 75], [1.5] * 3)
         else:
             target_fov = cur_fov
 
-        target_pose = rand_pan_tilt(cur_pose, target_fov)
+        target_pose = rand_pose(cur_pose, target_fov)
 
         while not end_simulation:
 
