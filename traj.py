@@ -10,25 +10,28 @@ from timer import Timer
 
 import os, time
 
-with Timer():
-    equi_img = cv2.imread('pano-1024.jpg')
-    print(equi_img.shape)
-    equi_img = np.transpose(equi_img, (2, 0, 1))
+print("Starting...")
 
+equi_img = cv2.imread('pano-1024.jpg')
+equi_img = np.transpose(equi_img, (2, 0, 1))
+
+# pyequilib uses a right-handed coordinate system: X forward, Y left, Z up.
+# However, this has the unintuitive effect that negative tilt (pitch) angles
+# will make the camera look up. So, we set z_down=True to fix this behavior.
 equi2pers = Equi2Pers(
     height=240,
     width=320,
     fov_x=75.0,
     mode='bilinear',
+    z_down=True,
 )
 
-n_keyframes = 10
+n_keyframes = 20
 dt = 1 / 25
-kp = 1
-drag = 2
+kp = 2
+drag = 1
 
-max_angular_vel = 60
-angular_err_tolerance = 5
+angular_err_tolerance = 10
 
 def wrap_angles(a):
     """Wrap angles to be in range [-180, 180]"""
@@ -45,10 +48,9 @@ def angular_dist(a, b):
     return d
 
 def rand_pan_tilt(prev_pose=None):
-    min_tilt, max_tilt = -50, 40
     if prev_pose is None:
         pan = np.random.uniform(-180, 180)
-        tilt = np.random.uniform(-50, 30)
+        tilt = np.random.uniform(-60, 30)
     else:
         pp, pt = prev_pose
         """ TODO: draw from more realistic distributions. A simple uniform
@@ -57,11 +59,12 @@ def rand_pan_tilt(prev_pose=None):
             current pose). Do something like a bimodal distribution with peaks
             at ±X degrees from the current pan/tilt.
         """
+        #min_tilt, max_tilt = -50, 40
         #pan = np.random.uniform(pp-30, pp+30)
         #tilt = np.random.uniform(max(min_tilt, pt-20), min(max_tilt, pt+20))
-        pan = utils.bimodal_normal([0.5, 0.5], [pp-60, pp+60], [1, 1])
-        tilt = utils.bimodal_normal([0.5, 0.5], [pt-20, pt+20], [1, 1])
-        tilt = np.clip(tilt, -50, 40)
+        pan = utils.bimodal_normal([0.5, 0.5], [pp-60, pp+60], [2, 2])
+        tilt = utils.bimodal_normal([0.5, 0.5], [pt-30, pt+30], [2, 2])
+        tilt = np.clip(tilt, -50, 20)
     return wrap_angles([pan, tilt])
 
 def main():
@@ -85,8 +88,8 @@ def main():
 
     for keyframe in keyframes[1:]:
 
-        #max_angular_vel = np.clip(np.random.normal(50, 2), 0, 90)
-        max_angular_vel = np.random.uniform(10, 90)
+        max_angular_vel = np.clip(np.random.normal(60, 2), 10, 90)
+        #max_angular_vel = np.random.uniform(10, 90)
 
         while True:
 
@@ -97,7 +100,9 @@ def main():
 
             angular_err *= 50 / vec_norm(angular_err)
 
-            angular_accel = kp * angular_err
+            noise_vector = np.random.normal([0,0], [50,50])
+
+            angular_accel = kp * angular_err + noise_vector
             damping = drag * angular_vel
 
             angular_vel += (angular_accel - damping) * dt
@@ -110,9 +115,8 @@ def main():
 
             poses.append(pose.copy())
 
-    pan_angles = [e[0] for e in poses]
-    tilt_angles = [e[1] for e in poses]
-
+    #pan_angles = [e[0] for e in poses]
+    #tilt_angles = [e[1] for e in poses]
     #plt.hist(pan_angles)
     #plt.hist(tilt_angles)
     #plt.show()
