@@ -12,7 +12,7 @@ import os, time
 
 print("Starting...")
 
-equi_img = cv2.imread('pano-1024.jpg')
+equi_img = cv2.imread('/Users/richard/Desktop/test.jpg')
 equi_img = np.transpose(equi_img, (2, 0, 1))
 
 # pyequilib uses a right-handed coordinate system: X forward, Y left, Z up.
@@ -50,9 +50,10 @@ def angular_dist(a, b):
 def rand_pan_tilt(prev_pose=None):
     if prev_pose is None:
         pan = np.random.uniform(-180, 180)
-        tilt = np.random.uniform(-60, 30)
+        tilt = np.random.uniform(-40, 20)
+        roll = np.random.uniform(-5, 5)
     else:
-        pp, pt = prev_pose
+        pp, pt, pr = prev_pose
         """ TODO: draw from more realistic distributions. A simple uniform
             range around the current pose can create unnaturally small
             "jittery" movements (when the next pose is very close to the
@@ -63,9 +64,11 @@ def rand_pan_tilt(prev_pose=None):
         #pan = np.random.uniform(pp-30, pp+30)
         #tilt = np.random.uniform(max(min_tilt, pt-20), min(max_tilt, pt+20))
         pan = utils.bimodal_normal([0.5, 0.5], [pp-60, pp+60], [2, 2])
-        tilt = utils.bimodal_normal([0.5, 0.5], [pt-30, pt+30], [2, 2])
-        tilt = np.clip(tilt, -50, 20)
-    return wrap_angles([pan, tilt])
+        tilt = utils.bimodal_normal([0.5, 0.5], [pt-10, pt+10], [2, 2])
+        tilt = np.clip(tilt, -40, 20)
+        roll = utils.bimodal_normal([0.5, 0.5], [pr-2, pr+2], [1, 1])
+        roll = np.clip(roll, -5, 5)
+    return wrap_angles([pan, tilt, roll])
 
 def main():
     np.set_printoptions(precision=3, suppress=True)
@@ -81,14 +84,14 @@ def main():
         keyframes.append(rand_pan_tilt(keyframes[-1]))
 
     pose = keyframes[0]
-    angular_vel = np.array([0, 0], np.float64)
-    angular_accel = np.array([0, 0], np.float64)
+    angular_vel = np.array([0, 0, 0], np.float64)
+    angular_accel = np.array([0, 0, 0], np.float64)
 
     poses = []
 
     for keyframe in keyframes[1:]:
 
-        max_angular_vel = np.clip(np.random.normal(60, 2), 10, 90)
+        max_angular_vel = np.clip(np.random.normal(50, 2), 10, 90)
         #max_angular_vel = np.random.uniform(10, 90)
 
         while True:
@@ -100,7 +103,7 @@ def main():
 
             angular_err *= 50 / vec_norm(angular_err)
 
-            noise_vector = np.random.normal([0,0], [50,50])
+            noise_vector = np.random.normal([0,0,0], [50,50,50])
 
             angular_accel = kp * angular_err + noise_vector
             damping = drag * angular_vel
@@ -115,11 +118,11 @@ def main():
 
             poses.append(pose.copy())
 
-    #pan_angles = [e[0] for e in poses]
-    #tilt_angles = [e[1] for e in poses]
-    #plt.hist(pan_angles)
-    #plt.hist(tilt_angles)
-    #plt.show()
+    pan_angles = [e[0] for e in poses]
+    tilt_angles = [e[1] for e in poses]
+    plt.hist(pan_angles)
+    plt.hist(tilt_angles)
+    plt.show()
 
     #print('Press return to proceed...', end='')
     #input()
@@ -130,7 +133,7 @@ def main():
         rots = {
             'yaw': np.radians(p[0]),
             'pitch': np.radians(p[1]),
-            'roll': 0,
+            'roll': np.radians(p[2]),
         }
         img = equi2pers(equi=equi_img, rots=rots)
         img = np.transpose(img, (1, 2, 0))
