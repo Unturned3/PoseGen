@@ -169,6 +169,11 @@ def main():
     cv2.destroyAllWindows()
     cv2.waitKey(1) # Without this the window won't actually close
 
+    print('Save trajectory (y/n)? ', end='')
+    if input() == 'y':
+        arr = np.array([[*p, f] for p, f in zip(poses, fovs)])
+        print(f'arr.shape: {arr.shape}')
+        np.save('out.npy', arr)
 
 if __name__ == '__main__':
     main()
