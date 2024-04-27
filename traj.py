@@ -1,33 +1,29 @@
 
 import cv2
 from PIL import Image
-from equilib import Equi2Pers
+from equilib import equi2pers
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.linalg import norm as vec_norm
 import utils
 from timer import Timer
+import scipy.stats as ss
 
 import os, time
 
 print("Starting...")
 
-equi_img = cv2.imread('/Users/richard/Desktop/test.jpg')
+#image_path = '/Users/richard/Desktop/test.jpg'
+image_path = 'pano-1024.jpg'
+equi_img = cv2.imread(image_path)
 equi_img = np.transpose(equi_img, (2, 0, 1))
 
 # pyequilib uses a right-handed coordinate system: X forward, Y left, Z up.
 # However, this has the unintuitive effect that negative tilt (pitch) angles
 # will make the camera look up. So, we set z_down=True to fix this behavior.
-equi2pers = Equi2Pers(
-    height=240,
-    width=320,
-    fov_x=75.0,
-    mode='bilinear',
-    z_down=True,
-)
 
 n_keyframes = 20
-dt = 1 / 25
+dt = 1 / 30
 kp = 2
 drag = 1
 
@@ -47,12 +43,13 @@ def angular_dist(a, b):
     d[d > 180] -= 360
     return d
 
-def rand_pan_tilt(prev_pose=None):
+def rand_pan_tilt(prev_pose=None, target_fov=None):
     if prev_pose is None:
         pan = np.random.uniform(-180, 180)
-        tilt = np.random.uniform(-40, 20)
+        tilt = np.random.uniform(-40, 10)
         roll = np.random.uniform(-5, 5)
     else:
+        assert target_fov is not None
         pp, pt, pr = prev_pose
         """ TODO: draw from more realistic distributions. A simple uniform
             range around the current pose can create unnaturally small
@@ -63,40 +60,49 @@ def rand_pan_tilt(prev_pose=None):
         #min_tilt, max_tilt = -50, 40
         #pan = np.random.uniform(pp-30, pp+30)
         #tilt = np.random.uniform(max(min_tilt, pt-20), min(max_tilt, pt+20))
-        pan = utils.bimodal_normal([0.5, 0.5], [pp-60, pp+60], [2, 2])
-        tilt = utils.bimodal_normal([0.5, 0.5], [pt-10, pt+10], [2, 2])
-        tilt = np.clip(tilt, -40, 20)
-        roll = utils.bimodal_normal([0.5, 0.5], [pr-2, pr+2], [1, 1])
+        pan = utils.multimodal(ss.uniform, [pp-65, pp+55], [10, 10])
+        tilt = utils.multimodal(ss.uniform, [pt-15, pt+5], [10, 10])
+        tilt = np.clip(tilt, -0.5 * target_fov - 2.5, 10)
+        roll = utils.multimodal(ss.norm, [pr-2, pr+2], [1, 1])
         roll = np.clip(roll, -5, 5)
     return wrap_angles([pan, tilt, roll])
 
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
-    """ TODO: instead of moving to a new pose in each keyframe, we can
-        duplicate certain keyframes a number of times to "pause" the rotation.
+    max_fov = 75
+    min_fov = 15
 
-        Vary FoV, angular velocity, roll, add jitter, etc.
-    """
-
-    keyframes = [rand_pan_tilt()]
-    for _ in range(n_keyframes - 1):
-        keyframes.append(rand_pan_tilt(keyframes[-1]))
-
-    pose = keyframes[0]
+    cur_fov = 75    # TODO: make this random too?
+    cur_pose = rand_pan_tilt()
     angular_vel = np.array([0, 0, 0], np.float64)
     angular_accel = np.array([0, 0, 0], np.float64)
 
-    poses = []
+    n_frames = 300
+    frame_cnt = 0
+    end_simulation = False
 
-    for keyframe in keyframes[1:]:
+    fovs, poses = [], []
 
-        max_angular_vel = np.clip(np.random.normal(50, 2), 10, 90)
-        #max_angular_vel = np.random.uniform(10, 90)
+    while not end_simulation:
 
-        while True:
+        # 50% chance to attempt zoom change
+        if np.random.uniform(0, 1) < 0.5:
+            target_fov = utils.multimodal(
+                ss.norm, [15, 35, 55, 75], [1.5] * 4)
+        else:
+            target_fov = cur_fov
 
-            angular_err = angular_dist(pose, keyframe)
+        target_pose = rand_pan_tilt(cur_pose, target_fov)
+
+        while not end_simulation:
+
+            cur_fov += (1 - 2 * (cur_fov > target_fov)) * min(1, abs(cur_fov - target_fov))
+
+            # Higher zoom = slower rotation
+            max_angular_vel = np.random.normal(50 - 0.7 * (max_fov - cur_fov), 2)
+
+            angular_err = angular_dist(cur_pose, target_pose)
 
             if vec_norm(angular_err) < angular_err_tolerance:
                 break
@@ -113,35 +119,52 @@ def main():
             if vec_norm(angular_vel) > max_angular_vel:
                 angular_vel *= max_angular_vel / vec_norm(angular_vel)
 
-            pose = (pose + angular_vel * dt) % 360
-            pose[pose > 180] -= 360
+            cur_pose = (cur_pose + angular_vel * dt) % 360
+            cur_pose[cur_pose > 180] -= 360
 
-            poses.append(pose.copy())
+            fovs.append(cur_fov)
+            poses.append(cur_pose.copy())
+
+            frame_cnt += 1
+
+            if frame_cnt >= n_frames:
+                end_simulation = True
 
     pan_angles = [e[0] for e in poses]
     tilt_angles = [e[1] for e in poses]
     plt.hist(pan_angles)
     plt.hist(tilt_angles)
+    plt.hist(fovs)
     plt.show()
 
     #print('Press return to proceed...', end='')
     #input()
 
-    imgs = []
-    for p in poses:
-        start_time = time.time()
-        rots = {
-            'yaw': np.radians(p[0]),
-            'pitch': np.radians(p[1]),
-            'roll': np.radians(p[2]),
-        }
-        img = equi2pers(equi=equi_img, rots=rots)
-        img = np.transpose(img, (1, 2, 0))
-        t = time.time() - start_time
-        cv2.imshow('img', img)
-        cv2.waitKey(max(int((dt-t)*1000), 1))
-        #cv2.waitKey(1)
-        imgs.append(img)
+    with Timer():
+        imgs = []
+        for p, fov in zip(poses, fovs):
+            start_time = time.time()
+            rots = {
+                'yaw': np.radians(p[0]),
+                'pitch': np.radians(p[1]),
+                'roll': np.radians(p[2]),
+            }
+            img = equi2pers(
+                equi=equi_img,
+                height=120,
+                width=160,
+                fov_x=fov,
+                rots=rots,
+                mode='bilinear',
+                z_down=True,
+            )
+            img = np.transpose(img, (1, 2, 0))
+            t = time.time() - start_time
+            cv2.imshow('img', img)
+            wait_time = max(int((dt-t)*1000), 1)
+            cv2.waitKey(wait_time)
+            #cv2.waitKey(1)
+            imgs.append(img)
 
     cv2.destroyAllWindows()
     cv2.waitKey(1) # Without this the window won't actually close

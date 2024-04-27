@@ -1,21 +1,16 @@
 
 import numpy as np
-from scipy.stats import norm
 
-def bimodal_normal(weights, means, std_devs):
-    """
-    Generate a bimodal distribution by mixing two normal distributions.
+def multimodal(func, locs, scales, weights=None):
 
-    Parameters:
-        n (int): Number of points to generate.
-        weights (list of float): Weights for each sub-distribution.
-        means (list of float): Means for each sub-distribution.
-        std_devs (list of float): Standard deviations for each sub-distribution.
+    assert len(locs) == len(scales)
 
-    Returns:
-        np.array: Random numbers from the specified bimodal distribution.
-    """
-    distributions = [norm(loc=mean, scale=std) for mean, std in zip(means, std_devs)]
+    if weights is None:
+        weights = [1 / len(locs)] * len(locs)
+    else:
+        assert len(locs) == len(weights)
+
+    distributions = [func(loc=l, scale=s) for l, s in zip(locs, scales)]
     choices = np.random.choice(len(distributions), size=1, p=weights)
     samples = np.array([distributions[i].rvs() for i in choices])
     return samples[0]
