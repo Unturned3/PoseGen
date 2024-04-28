@@ -145,7 +145,7 @@ def main():
 
     for i in range(30):
         poses, fovs = simulate()
-        save_trajectory(f'{i:03d}.npy', poses, fovs)
+        save_trajectory(f'output/{i:03d}.npy', poses, fovs)
 
     if render:
         imgs = []
