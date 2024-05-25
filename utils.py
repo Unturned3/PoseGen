@@ -14,3 +14,9 @@ def multimodal(func, locs, scales, weights=None):
     choices = np.random.choice(len(distributions), size=1, p=weights)
     samples = np.array([distributions[i].rvs() for i in choices])
     return samples[0]
+
+def print_traj(path):
+    np.set_printoptions(precision=5, suppress=True)
+    traj = np.load(path)
+    for i, e in enumerate(traj):
+        print(i, e)

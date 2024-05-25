@@ -7,11 +7,7 @@ from timer import Timer
 import scipy.stats as ss
 import time
 
-render = False
 show_histogram = False
-
-if render:
-    from equilib import equi2pers
 
 if show_histogram:
     import matplotlib.pyplot as plt
@@ -20,11 +16,11 @@ if show_histogram:
 # However, this has the unintuitive effect that negative tilt (pitch) angles
 # will make the camera look up. So, we set z_down=True to fix this behavior.
 
-n_frames = 300
+n_frames = 900
 dt = 1 / 30
 kp = 2
 drag = 1
-angular_err_tolerance = 10
+angular_err_tolerance = 5
 
 max_fov = 75
 min_fov = 15
@@ -46,18 +42,21 @@ def angular_dist(a, b):
 def rand_pose(prev_pose=None, target_fov=None):
     if prev_pose is None:
         pan = np.random.uniform(-180, 180)
-        tilt = np.random.uniform(-40, 10)
+        tilt = np.random.uniform(-5, 0)
         roll = np.random.uniform(-5, 5)
     else:
         assert target_fov is not None
         pp, pt, pr = prev_pose
         # TODO: create next pan range as linear function of target_fov
-        if target_fov < 35:
-            pan = utils.multimodal(ss.uniform, [pp-30, pp+20], [10, 10])
+        if target_fov < 40:
+            pan = utils.multimodal(ss.uniform, [pp-18, pp+18], [1, 1])
+            tilt = utils.multimodal(ss.uniform, [pt-5, pt+5], [1, 1])
+            tilt = np.clip(tilt, -0.7 * target_fov + 15, 0)
         else:
-            pan = utils.multimodal(ss.uniform, [pp-65, pp+55], [10, 10])
-        tilt = utils.multimodal(ss.uniform, [pt-15, pt+5], [10, 10])
-        tilt = np.clip(tilt, -0.5 * target_fov - 2.5, 10)
+            pan = utils.multimodal(ss.uniform, [pp-55, pp+55], [5, 5])
+            tilt = utils.multimodal(ss.uniform, [pt-10, pt+10], [5, 5])
+            tilt = np.clip(tilt, -0.7 * target_fov + 15, 5)
+
         roll = utils.multimodal(ss.norm, [pr-2, pr+2], [1, 1])
         roll = np.clip(roll, -5, 5)
     return wrap_angles([pan, tilt, roll])
@@ -75,10 +74,9 @@ def simulate():
 
     while not end_simulation:
 
-        # 50% chance to attempt zoom change
-        if np.random.uniform(0, 1) < 0.5:
+        if np.random.uniform(0, 1) < 0.75:
             target_fov = utils.multimodal(
-                ss.norm, [35, 55, 75], [1.5] * 3)
+                ss.norm, [35, 55, 75], [0] * 3)
         else:
             target_fov = cur_fov
 
@@ -89,7 +87,7 @@ def simulate():
             cur_fov += (1 - 2 * (cur_fov > target_fov)) * min(1, abs(cur_fov - target_fov))
 
             # Higher zoom = slower rotation
-            max_angular_vel = np.random.normal(50 - 0.7 * (max_fov - cur_fov), 2)
+            max_angular_vel = np.random.normal(30 - 0.6 * (max_fov - cur_fov), 2)
 
             angular_err = angular_dist(cur_pose, target_pose)
 
@@ -138,49 +136,9 @@ def save_trajectory(name, poses, fovs):
 def main():
     np.set_printoptions(precision=3, suppress=True)
 
-    if render:
-        image_path = '/Users/richard/Desktop/real.jpg'
-        equi_img = cv2.imread(image_path)
-        equi_img = np.transpose(equi_img, (2, 0, 1))
-
-    for i in range(30):
+    for i in range(25):
         poses, fovs = simulate()
-        save_trajectory(f'output/{i:03d}.npy', poses, fovs)
-
-    if render:
-        imgs = []
-        for p, fov in zip(poses, fovs):
-            start_time = time.time()
-            rots = {'yaw': np.radians(p[0]),
-                    'pitch': np.radians(p[1]),
-                    'roll': np.radians(p[2])}
-            img = equi2pers(equi=equi_img, height=120, width=160,
-                fov_x=fov, rots=rots, mode='bilinear', z_down=True)
-            img = np.transpose(img, (1, 2, 0))
-            t = time.time() - start_time
-            cv2.imshow('img', img)
-            wait_time = max(int((dt-t)*1000), 1)
-            cv2.waitKey(wait_time)
-            imgs.append(img)
-
-        cv2.destroyAllWindows()
-        cv2.waitKey(1) # Without this the window won't actually close
-
-    #print('Save trajectory (y/n)? ', end='')
-    #if input() == 'y':
-    #    arr = np.array([[*p, f] for p, f in zip(poses, fovs)])
-    #    print(f'arr.shape: {arr.shape}')
-    #    np.save('out.npy', arr)
-
+        save_trajectory(f'/Users/richard/Desktop/Trajs/t{i:03d}.npy', poses, fovs)
 
 if __name__ == '__main__':
     main()
-
-
-#print('Save video (y/n)? ', end='')
-#if input() == 'y':
-#    writer = cv2.VideoWriter('out.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 30, (320, 240))
-#    for i in range(0, frames):
-#        writer.write(imgs[i])
-#    writer.release()
-
