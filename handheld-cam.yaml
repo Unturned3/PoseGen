@@ -1,0 +1,25 @@
+
+n_frames: 900
+dt: 0.0333333
+kp: 2
+drag: 1
+angular_err_tolerance: 5
+
+max_fov: 75
+min_fov: 15
+
+# Init pose constraints
+init_fov: 75
+min_init_roll: -5
+max_init_roll: 5
+min_init_tilt: -5
+max_init_tilt: 0
+
+# Other pose constraints
+min_roll: -5
+max_roll: 5
+min_tilt: -15
+max_tilt: 0
+
+zoom_prob: 0.75
+noise_scale: [50, 50, 50]
