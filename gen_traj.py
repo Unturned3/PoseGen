@@ -36,18 +36,28 @@ def rand_pose(prev_pose=None, target_fov=None):
     else:
         assert target_fov is not None
         pp, pt, pr = prev_pose
-        # TODO: create next pan range as linear function of target_fov
-        if target_fov < 40:
-            pan = utils.multimodal(ss.uniform, [pp-18, pp+18], [1, 1])
-            tilt = utils.multimodal(ss.uniform, [pt-5, pt+5], [1, 1])
-            tilt = np.clip(tilt, -0.7 * target_fov + 15, 0)
+        if cfg['motorized']:
+            pan = utils.multimodal(
+                ss.uniform,
+                [pp-target_fov/1.5, pp+target_fov/1.5],
+                [2, 2])
+            tilt = utils.multimodal(
+                ss.uniform,
+                [pt-target_fov/2.5, pt+target_fov/2.5],
+                [2, 2])
+            tilt = np.clip(tilt, cfg['min_tilt'], cfg['max_tilt'])
         else:
-            pan = utils.multimodal(ss.uniform, [pp-55, pp+55], [5, 5])
-            tilt = utils.multimodal(ss.uniform, [pt-10, pt+10], [5, 5])
-            tilt = np.clip(tilt, -0.7 * target_fov + 15, 5)
+            if target_fov < 40:
+                pan = utils.multimodal(ss.uniform, [pp-18, pp+18], [1, 1])
+                tilt = utils.multimodal(ss.uniform, [pt-5, pt+5], [1, 1])
+                tilt = np.clip(tilt, -0.7 * target_fov + 15, 0)
+            else:
+                pan = utils.multimodal(ss.uniform, [pp-55, pp+55], [5, 5])
+                tilt = utils.multimodal(ss.uniform, [pt-10, pt+10], [5, 5])
+                tilt = np.clip(tilt, -0.7 * target_fov + 15, 5)
 
         roll = utils.multimodal(ss.norm, [pr-2, pr+2], [1, 1])
-        roll = np.clip(roll, -5, 5)
+        roll = np.clip(roll, cfg['min_roll'], cfg['max_roll'])
 
     return wrap_angles([pan, tilt, roll])
 
@@ -55,7 +65,7 @@ def simulate():
 
     global cfg
 
-    cur_fov = cfg['init_fov']
+    cur_fov = cfg['zoom_fovs'][-1]
     cur_pose = rand_pose()
     angular_vel = np.array([0, 0, 0], np.float64)
     angular_accel = np.array([0, 0, 0], np.float64)
@@ -64,27 +74,51 @@ def simulate():
     end_simulation = False
 
     fovs, poses = [], []
+    wide_fov_poses = []
 
     while not end_simulation:
 
-        if np.random.uniform(0, 1) < cfg['zoom_prob']:
+        if np.random.uniform(0, 1) <= cfg['zoom_prob']:
             target_fov = utils.multimodal(
-                ss.norm, [35, 55, 75], [0] * 3)
+                ss.norm, cfg['zoom_fovs'], [0] * len(cfg['zoom_fovs']))
         else:
             target_fov = cur_fov
 
-        target_pose = rand_pose(cur_pose, target_fov)
+        if np.random.uniform(0, 1) < cfg['loop_closure_prob'] and len(wide_fov_poses) > 0:
+            idx = np.random.randint(0, len(wide_fov_poses))
+            target_pose = wide_fov_poses[idx]
+            target_pose[0] += np.random.uniform(-10, 10)
+            target_pose[1] += np.random.uniform(-5, 5)
+            target_fov = cfg['zoom_fovs'][-1]
+        else:
+            target_pose = rand_pose(cur_pose, target_fov)
+
+        if abs(target_fov - cfg['zoom_fovs'][-1]) < 5:
+            wide_fov_poses.append(target_pose)
 
         while not end_simulation:
 
-            cur_fov += (1 - 2 * (cur_fov > target_fov)) * min(1, abs(cur_fov - target_fov))
+            cur_fov += (1 - 2 * (cur_fov > target_fov)) \
+                * min(cfg['zoom_rate'], abs(cur_fov - target_fov))
 
             # Higher zoom = slower rotation
-            max_angular_vel = np.random.normal(30 - 0.6 * (cfg['max_fov'] - cur_fov), 2)
+            if cfg['motorized']:
+                max_angular_vel = cfg['max_angular_vel']
+            else:
+                max_angular_vel = np.random.normal(30 - 0.6 * (cfg['max_fov'] - cur_fov), 2)
 
             angular_err = angular_dist(cur_pose, target_pose)
 
             if vec_norm(angular_err) < cfg['angular_err_tolerance']:
+                if cfg['wait_frames_at_target']:
+                    for _ in range(cfg['wait_frames_at_target']):
+                        fovs.append(cur_fov)
+                        poses.append(cur_pose.copy())
+                        cur_fov += (1 - 2 * (cur_fov > target_fov)) * min(1, abs(cur_fov - target_fov))
+                        frame_cnt += 1
+                        if frame_cnt >= cfg['n_frames']:
+                            end_simulation = True
+                            break
                 break
 
             angular_err *= 50 / vec_norm(angular_err)
@@ -132,7 +166,7 @@ def main():
 
     for i in range(n_trajs):
         poses, fovs = simulate()
-        save_trajectory(pjoin(out_dir, f'{i:03d}.npy'), poses, fovs)
+        save_trajectory(pjoin(out_dir, f't{i:03d}.npy'), poses, fovs)
 
 if __name__ == '__main__':
     main()
